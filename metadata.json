@@ -1,0 +1,7 @@
+{
+  "name": "Juntos Farm AgroFlow",
+  "description": "Sistema de gestión agrícola para Juntos Farm, con registro de siembra por filas y producción por cajas con trazabilidad total.",
+  "requestFramePermissions": [
+    "camera"
+  ]
+}
