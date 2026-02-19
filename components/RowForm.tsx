@@ -1,179 +1,166 @@
 
-import React, { useState } from 'react';
-import { CicloCultivo } from '../types';
-import { analyzeCropImage } from '../services/geminiService';
+import React, { useState, useRef } from 'react';
+import { Fila, CicloCultivo } from '../types';
+import { GoogleGenAI } from "@google/genai";
 
 interface RowFormProps {
   filaId: number;
   onBack: () => void;
-  onSubmit: (data: Partial<CicloCultivo>) => void;
+  onSubmit: (data: Omit<CicloCultivo, 'id' | 'fila_id' | 'estado'>) => void;
 }
-
-const METODOS_LABRADO = [
-  "Manual con Azadón",
-  "Motocultor Ligero",
-  "Labranza Mínima",
-  "Surcado Tradicional",
-  "Sin Labranza (Siembra Directa)"
-];
-
-const ABONOS = [
-  "Orgánico (Composta)",
-  "Humus de Lombriz",
-  "NPK 15-15-15",
-  "Urea",
-  "Foliar Multivitamínico",
-  "Sin Abono Inicial"
-];
-
-const VARIEDADES = [
-  "Tomate Cherry",
-  "Tomate Manzano",
-  "Pimiento Bell",
-  "Lechuga Romana",
-  "Albahaca Italiana",
-  "Cilantro Criollo",
-  "Cebolla Larga",
-  "Chile Jalapeño"
-];
-
-const TRATAMIENTOS_INICIALES = [
-  "Preventivo de Hongos",
-  "Control de Plagas (Orgánico)",
-  "Riego de Asiento",
-  "Fortalecedor de Raíz",
-  "Poda de Limpieza",
-  "Ninguno"
-];
 
 const RowForm: React.FC<RowFormProps> = ({ filaId, onBack, onSubmit }) => {
   const [formData, setFormData] = useState({
-    metodo_labrado: METODOS_LABRADO[0],
-    abono: ABONOS[0],
-    variedad_planta: VARIEDADES[0],
-    tratamientos: TRATAMIENTOS_INICIALES[0]
+    batch_id: `LOTE-${new Date().getFullYear()}-${filaId}-${Math.floor(Math.random() * 1000)}`,
+    metodo_labrado: 'Tradicional',
+    abono: 'Orgánico - Compost',
+    variedad_planta: 'Tomate Cherry',
+    tratamientos: 'Ninguno',
+    fecha_inicio: new Date().toISOString().split('T')[0]
   });
-  const [isAnalyzing, setIsAnalyzing] = useState(false);
-  const [aiAnalysis, setAiAnalysis] = useState<string | null>(null);
+
+  const [analyzingIds, setAnalyzingIds] = useState<boolean>(false);
+  const [analysisResult, setAnalysisResult] = useState<string | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const handleGeminiAnalysis = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
 
-    setIsAnalyzing(true);
-    setAiAnalysis(null);
+    setAnalyzingIds(true);
+    setAnalysisResult(null);
 
     const reader = new FileReader();
     reader.onloadend = async () => {
-      const base64 = reader.result as string;
-      const result = await analyzeCropImage(base64);
-      setAiAnalysis(result);
-      setIsAnalyzing(false);
+      const base64Image = reader.result as string;
+      const base64Data = base64Image.split(',')[1];
+
+      try {
+        const client = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
+        const model = client.models.getModel('gemini-2.0-flash-001');
+
+        const result = await model.generateContent({
+             contents: [
+                {
+                    role: 'user',
+                    parts: [
+                        { text: "Analiza esta imagen del cultivo. Identifica posibles plagas, estado de crecimiento y sugiere un tratamiento breve si es necesario. Responde en español, muy conciso (máx 3 lineas)." },
+                        { inlineData: { mimeType: file.type, data: base64Data } }
+                    ]
+                }
+             ]
+        });
+
+        const responseText = result.response.text();
+        setAnalysisResult(responseText);
+        setFormData(prev => ({ ...prev, tratamientos: `Análisis IA: ${responseText.slice(0, 50)}...` }));
+      } catch (error) {
+        console.error("Gemini Error:", error);
+        setAnalysisResult("Error al analizar la imagen. Verifica tu conexión o intenta de nuevo.");
+      } finally {
+        setAnalyzingIds(false);
+      }
     };
     reader.readAsDataURL(file);
   };
 
-  const selectClasses = "w-full p-4 bg-white border border-stone-200 rounded-xl focus:ring-2 focus:ring-[#1A3C34] focus:outline-none transition-all appearance-none font-medium text-slate-700 cursor-pointer shadow-sm";
-
   return (
     <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-300">
       <div className="flex items-center space-x-3 mb-4">
-        <button onClick={onBack} className="p-2 bg-stone-100 rounded-full hover:bg-stone-200 transition-colors">
-          <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 text-[#1A3C34]" viewBox="0 0 20 20" fill="currentColor">
+        <button onClick={onBack} className="p-2 bg-slate-100 rounded-full">
+          <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
             <path fillRule="evenodd" d="M9.707 16.707a1 1 0 01-1.414 0l-6-6a1 1 0 010-1.414l6-6a1 1 0 011.414 1.414L5.414 9H17a1 1 0 110 2H5.414l4.293 4.293a1 1 0 010 1.414z" clipRule="evenodd" />
           </svg>
         </button>
-        <h2 className="text-xl font-bold text-[#1A3C34]">Nueva Siembra: Fila {filaId}</h2>
+        <h2 className="text-xl font-bold text-slate-800">Nueva Siembra: Fila {filaId}</h2>
       </div>
 
-      <div className="space-y-5">
-        <div className="relative">
-          <label className="block text-[10px] font-black text-stone-400 uppercase mb-2 tracking-widest ml-1">Variedad de Planta</label>
-          <select 
-            className={selectClasses}
-            value={formData.variedad_planta}
-            onChange={e => setFormData({...formData, variedad_planta: e.target.value})}
-          >
-            {VARIEDADES.map(v => <option key={v} value={v}>{v}</option>)}
-          </select>
-          <div className="absolute right-4 bottom-4 pointer-events-none text-stone-400">
-            <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor"><path fillRule="evenodd" d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z" clipRule="evenodd" /></svg>
-          </div>
+      <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm space-y-4">
+        <div>
+          <label className="block text-xs font-bold text-slate-400 uppercase tracking-widest mb-1">ID de Lote (Automático)</label>
+          <input 
+            type="text" 
+            disabled 
+            value={formData.batch_id}
+            className="w-full bg-slate-50 border border-slate-200 rounded-lg p-3 font-mono text-sm text-slate-500"
+          />
         </div>
 
-        <div className="relative">
-          <label className="block text-[10px] font-black text-stone-400 uppercase mb-2 tracking-widest ml-1">Método de Labrado</label>
-          <select 
-            className={selectClasses}
-            value={formData.metodo_labrado}
-            onChange={e => setFormData({...formData, metodo_labrado: e.target.value})}
-          >
-            {METODOS_LABRADO.map(m => <option key={m} value={m}>{m}</option>)}
-          </select>
-          <div className="absolute right-4 bottom-4 pointer-events-none text-stone-400">
-            <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor"><path fillRule="evenodd" d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z" clipRule="evenodd" /></svg>
-          </div>
+        <div className="grid grid-cols-2 gap-4">
+           <div>
+             <label className="block text-xs font-bold text-slate-400 uppercase tracking-widest mb-1">Variedad</label>
+             <select 
+               className="w-full bg-white border border-slate-200 rounded-lg p-3 font-bold text-slate-700 focus:ring-2 focus:ring-emerald-500 outline-none"
+               value={formData.variedad_planta}
+               onChange={e => setFormData({...formData, variedad_planta: e.target.value})}
+             >
+               <option>Tomate Cherry</option>
+               <option>Lechuga Romana</option>
+               <option>Pimiento Rojo</option>
+               <option>Zanahoria Baby</option>
+             </select>
+           </div>
+           <div>
+             <label className="block text-xs font-bold text-slate-400 uppercase tracking-widest mb-1">Método Labrado</label>
+             <select 
+               className="w-full bg-white border border-slate-200 rounded-lg p-3 font-medium text-slate-600 focus:ring-2 focus:ring-emerald-500 outline-none"
+               value={formData.metodo_labrado}
+               onChange={e => setFormData({...formData, metodo_labrado: e.target.value})}
+             >
+               <option>Tradicional</option>
+               <option>Hidropónico</option>
+               <option>Cama Elevada</option>
+             </select>
+           </div>
         </div>
 
-        <div className="relative">
-          <label className="block text-[10px] font-black text-stone-400 uppercase mb-2 tracking-widest ml-1">Abono Utilizado</label>
-          <select 
-            className={selectClasses}
-            value={formData.abono}
-            onChange={e => setFormData({...formData, abono: e.target.value})}
-          >
-            {ABONOS.map(a => <option key={a} value={a}>{a}</option>)}
-          </select>
-          <div className="absolute right-4 bottom-4 pointer-events-none text-stone-400">
-            <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor"><path fillRule="evenodd" d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z" clipRule="evenodd" /></svg>
-          </div>
+        <div>
+           <label className="block text-xs font-bold text-slate-400 uppercase tracking-widest mb-1">Abono Inicial</label>
+           <input 
+             type="text" 
+             className="w-full bg-white border border-slate-200 rounded-lg p-3 font-medium focus:ring-2 focus:ring-emerald-500 outline-none"
+             value={formData.abono}
+             onChange={e => setFormData({...formData, abono: e.target.value})}
+           />
         </div>
 
-        <div className="relative">
-          <label className="block text-[10px] font-black text-stone-400 uppercase mb-2 tracking-widest ml-1">Tratamiento Inicial</label>
-          <select 
-            className={selectClasses}
-            value={formData.tratamientos}
-            onChange={e => setFormData({...formData, tratamientos: e.target.value})}
-          >
-            {TRATAMIENTOS_INICIALES.map(t => <option key={t} value={t}>{t}</option>)}
-          </select>
-          <div className="absolute right-4 bottom-4 pointer-events-none text-stone-400">
-            <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor"><path fillRule="evenodd" d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z" clipRule="evenodd" /></svg>
-          </div>
-        </div>
+        <div className="pt-2 border-t border-slate-100">
+           <label className="flex items-center space-x-2 text-xs font-bold text-emerald-600 uppercase tracking-widest mb-2 cursor-pointer" onClick={() => fileInputRef.current?.click()}>
+              <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 13a3 3 0 11-6 0 3 3 0 016 0z" /></svg>
+              <span>Analizar Terreno con IA (Gemini)</span>
+           </label>
+           <input 
+             type="file" 
+             accept="image/*" 
+             className="hidden" 
+             ref={fileInputRef}
+             onChange={handleGeminiAnalysis}
+           />
+           
+           {analyzingIds && (
+             <div className="text-xs text-emerald-500 animate-pulse font-medium">✨ Analizando imagen del cultivo...</div>
+           )}
 
-        {/* Gemini Integration */}
-        <div className="p-4 bg-[#1A3C34]/5 border border-[#1A3C34]/10 rounded-2xl">
-          <div className="flex items-center justify-between mb-2">
-            <div>
-              <h3 className="text-xs font-black text-[#1A3C34] uppercase tracking-wider">Asistente IA Juntos</h3>
-              <p className="text-[9px] text-stone-500 font-bold">Analizar estado de la tierra o plántula</p>
-            </div>
-            <label className="cursor-pointer bg-[#D96C4D] text-white px-4 py-2 rounded-xl text-xs font-bold hover:bg-[#D96C4D]/90 shadow-md transition-all active:scale-95">
-              {isAnalyzing ? 'Analizando...' : 'Tomar Foto'}
-              <input type="file" className="hidden" accept="image/*" onChange={handleGeminiAnalysis} disabled={isAnalyzing} />
-            </label>
-          </div>
-          {isAnalyzing && (
-            <div className="flex items-center space-x-2 animate-pulse mt-2">
-               <div className="w-2 h-2 bg-[#D96C4D] rounded-full"></div>
-               <p className="text-[10px] text-[#1A3C34] font-bold">Consultando a Gemini...</p>
-            </div>
-          )}
-          {aiAnalysis && (
-            <div className="mt-3 text-[11px] text-[#1A3C34] bg-white p-3 rounded-lg border border-[#1A3C34]/10 italic leading-relaxed">
-              "{aiAnalysis}"
-            </div>
-          )}
+           {analysisResult && (
+             <div className="bg-emerald-50 p-3 rounded-lg text-xs text-emerald-800 border border-emerald-100 mt-2">
+               <strong>Análisis Gemini:</strong> {analysisResult}
+             </div>
+           )}
+
+           <textarea 
+             className="w-full bg-slate-50 border border-slate-200 rounded-lg p-3 text-sm mt-2 focus:ring-2 focus:ring-emerald-500 outline-none"
+             rows={2}
+             placeholder="Observaciones o Tratamientos..."
+             value={formData.tratamientos}
+             onChange={e => setFormData({...formData, tratamientos: e.target.value})}
+           ></textarea>
         </div>
 
         <button 
           onClick={() => onSubmit(formData)}
-          className="w-full bg-[#1A3C34] hover:bg-[#1A3C34]/90 text-white font-bold py-5 rounded-2xl shadow-xl transition-all active:scale-95 flex items-center justify-center space-x-2"
+          className="w-full bg-[#1A3C34] hover:bg-[#1A3C34]/90 text-white font-bold py-4 rounded-xl shadow-lg transition-all active:scale-95 flex items-center justify-center space-x-2 mt-4"
         >
-          <span>Registrar Siembra y Crear Lote</span>
-          <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor"><path fillRule="evenodd" d="M10.293 3.293a1 1 0 011.414 0l6 6a1 1 0 010 1.414l-6 6a1 1 0 01-1.414-1.414L14.586 11H3a1 1 0 110-2h11.586l-4.293-4.293a1 1 0 010-1.414z" clipRule="evenodd" /></svg>
+           <span>Registrar Siembra y Crear Lote</span>
         </button>
       </div>
     </div>
