@@ -1,12 +1,20 @@
 
 import { createClient } from '@supabase/supabase-js';
-import { Fila, CicloCultivo, Caja, HistoricoProduccion } from '../types';
+import { CicloCultivo, Caja, HistoricoProduccion, Fila } from '../types';
 
-const SUPABASE_URL = 'https://agjvhvjhrmwkvszyjitl.supabase.co';
-const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImFnanZodmpocm13a3ZzenlqaXRsIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjQ2OTA1MDAsImV4cCI6MjA4MDI2NjUwMH0.8FPklsr58Z7MxWU7Pr7zttABgUNX6Q8J48OKmuVhGyo';
+// Environment variables for Vercel/Vite
+const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL || '';
+const SUPABASE_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY || '';
 
+if (!SUPABASE_URL || !SUPABASE_KEY) {
+  console.warn('Supabase credentials missing! Check your .env setup.');
+}
+
+// Removed explicit schema selection to default to 'public'
 export const supabase = createClient(SUPABASE_URL, SUPABASE_KEY);
 
+// Helper functions (optional wrapper for type safety if needed, 
+// but using supabase directly in components is also fine for simple apps)
 export const fetchFilas = async () => {
     const { data, error } = await supabase.from('agroflow_filas').select('*').order('id');
     if (error) throw error;
